@@ -22,8 +22,10 @@ function getOrCreateDeviceId() {
 
 export default function Home() {
   const chatkitRef = useRef<ChatKitElement | null>(null);
+  const [chatkitEl, setChatkitEl] = useState<ChatKitElement | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [userCount, setUserCount] = useState(0);
+  const [status, setStatus] = useState<string>("Carregando chat...");
 
   const shouldShowAd = useMemo(() => {
     return userCount > 0 && userCount % 3 === 0;
@@ -34,70 +36,77 @@ export default function Home() {
   }, [userCount]);
 
   useEffect(() => {
+    if (!chatkitEl) return;
+
     const deviceId = getOrCreateDeviceId();
-
     let cancelled = false;
-    let tries = 0;
-    let interval: number | null = null;
+    const el = chatkitEl;
 
-    const init = () => {
-      const el = chatkitRef.current;
-      if (!el?.setOptions) return false;
+    async function init() {
+      try {
+        if ("customElements" in window && window.customElements?.whenDefined) {
+          await window.customElements.whenDefined("openai-chatkit");
+        }
 
-      el.setOptions({
-        api: {
-          async getClientSecret(existing: string | null) {
-            if (existing) return existing;
-            const res = await fetch("/api/chatkit/session", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ deviceId }),
-            });
-            const data = (await res.json()) as { client_secret?: string };
-            return data.client_secret || "";
+        if (cancelled) return;
+        if (!el.setOptions) {
+          setStatus("Chat carregado, aguardando inicialização...");
+          return;
+        }
+
+        el.setOptions({
+          api: {
+            async getClientSecret(existing: string | null) {
+              if (existing) return existing;
+
+              const res = await fetch("/api/chatkit/session", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ deviceId }),
+              });
+
+              const data = (await res.json()) as {
+                client_secret?: string;
+                error?: string;
+                details?: unknown;
+              };
+
+              if (!res.ok) {
+                setStatus(
+                  `Erro ao criar sessão: ${data.error || "falha"}. Verifique OPENAI_API_KEY e WORKFLOW_ID.`,
+                );
+                return "";
+              }
+
+              if (!data.client_secret) {
+                setStatus(
+                  "Sessão criada sem client_secret. Verifique permissões do workflow.",
+                );
+                return "";
+              }
+
+              setStatus("Pronto");
+              return data.client_secret;
+            },
           },
-        },
-        locale: "pt-BR",
-        header: { visible: false },
-        frameTitle: "Carla",
-      });
-
-      return true;
-    };
-
-    const tryInit = () => {
-      if (cancelled) return;
-      tries += 1;
-      const ok = init();
-      if (ok && interval) {
-        window.clearInterval(interval);
-        interval = null;
+          locale: "pt-BR",
+          header: { visible: false },
+          frameTitle: "Carla",
+        });
+      } catch {
+        setStatus("Falha ao inicializar o chat.");
       }
-      if (tries > 40 && interval) {
-        window.clearInterval(interval);
-        interval = null;
-      }
-    };
+    }
 
-    const el = chatkitRef.current;
-    const onReady = () => {
-      tryInit();
-    };
-
-    el?.addEventListener?.("chatkit.ready", onReady);
-
-    tryInit();
-    interval = window.setInterval(tryInit, 250);
+    void init();
 
     return () => {
       cancelled = true;
-      if (interval) window.clearInterval(interval);
-      el?.removeEventListener?.("chatkit.ready", onReady);
     };
-  }, []);
+  }, [chatkitEl]);
 
   useEffect(() => {
-    const el = chatkitRef.current;
+    const el = chatkitEl;
     if (!el) return;
 
     const onThreadChange = (event: Event) => {
@@ -119,7 +128,7 @@ export default function Home() {
       );
       el.removeEventListener("chatkit.response.end", onResponseEnd);
     };
-  }, []);
+  }, [chatkitEl]);
 
   useEffect(() => {
     if (!threadId) return;
@@ -147,11 +156,23 @@ export default function Home() {
       <div className="mx-auto flex min-h-[100dvh] w-full max-w-[520px] flex-col bg-[#ECE5DD]">
         <ChatHeader />
 
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="relative min-h-0 flex-1 overflow-hidden">
           {createElement("openai-chatkit", {
-            ref: chatkitRef as unknown as never,
+            ref: (node: unknown) => {
+              const el = node as ChatKitElement | null;
+              chatkitRef.current = el;
+              setChatkitEl(el);
+            },
             className: "block h-full w-full",
           })}
+
+          {status !== "Pronto" ? (
+            <div className="pointer-events-none absolute left-0 right-0 top-14 mx-auto max-w-[520px] px-3">
+              <div className="rounded-xl bg-white/90 p-3 text-[13px] text-zinc-700 shadow-sm ring-1 ring-black/5">
+                {status}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div

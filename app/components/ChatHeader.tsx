@@ -5,7 +5,7 @@ export default function ChatHeader() {
     <header className="sticky top-0 z-20 flex h-14 w-full items-center gap-3 bg-[#075E54] px-4 text-white shadow-sm">
       <div className="h-9 w-9 overflow-hidden rounded-full bg-white/20">
         <Image
-          src="/vercel.svg"
+          src="/carla.jpg"
           alt="Carla"
           width={36}
           height={36}
