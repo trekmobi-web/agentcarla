@@ -34,28 +34,66 @@ export default function Home() {
   }, [userCount]);
 
   useEffect(() => {
-    const el = chatkitRef.current;
-    if (!el?.setOptions) return;
-
     const deviceId = getOrCreateDeviceId();
 
-    el.setOptions({
-      api: {
-        async getClientSecret(existing: string | null) {
-          if (existing) return existing;
-          const res = await fetch("/api/chatkit/session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ deviceId }),
-          });
-          const data = (await res.json()) as { client_secret?: string };
-          return data.client_secret || "";
+    let cancelled = false;
+    let tries = 0;
+    let interval: number | null = null;
+
+    const init = () => {
+      const el = chatkitRef.current;
+      if (!el?.setOptions) return false;
+
+      el.setOptions({
+        api: {
+          async getClientSecret(existing: string | null) {
+            if (existing) return existing;
+            const res = await fetch("/api/chatkit/session", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ deviceId }),
+            });
+            const data = (await res.json()) as { client_secret?: string };
+            return data.client_secret || "";
+          },
         },
-      },
-      locale: "pt-BR",
-      header: { visible: false },
-      frameTitle: "Carla",
-    });
+        locale: "pt-BR",
+        header: { visible: false },
+        frameTitle: "Carla",
+      });
+
+      return true;
+    };
+
+    const tryInit = () => {
+      if (cancelled) return;
+      tries += 1;
+      const ok = init();
+      if (ok && interval) {
+        window.clearInterval(interval);
+        interval = null;
+      }
+      if (tries > 40 && interval) {
+        window.clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    const el = chatkitRef.current;
+    const onReady = () => {
+      tryInit();
+    };
+
+    el?.addEventListener?.("chatkit.ready", onReady);
+
+    tryInit();
+    interval = window.setInterval(tryInit, 250);
+
+    return () => {
+      cancelled = true;
+      if (interval) window.clearInterval(interval);
+      el?.removeEventListener?.("chatkit.ready", onReady);
+    };
   }, []);
 
   useEffect(() => {
@@ -109,7 +147,7 @@ export default function Home() {
       <div className="mx-auto flex min-h-[100dvh] w-full max-w-[520px] flex-col bg-[#ECE5DD]">
         <ChatHeader />
 
-        <div className="flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden">
           {createElement("openai-chatkit", {
             ref: chatkitRef as unknown as never,
             className: "block h-full w-full",
