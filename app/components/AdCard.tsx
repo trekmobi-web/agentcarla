@@ -1,17 +1,13 @@
 "use client";
 
-import { useEffect, useId, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
 type Props = {
   adIndex: number;
 };
 
 export default function AdCard({ adIndex }: Props) {
-  const reactId = useId();
-  const divId = useMemo(
-    () => `div-gpt-ad-1768928325283-${adIndex}-${reactId.replaceAll(":", "")}`,
-    [adIndex, reactId],
-  );
+  const divId = useMemo(() => `div-gpt-ad-1768928325283-${adIndex}`, [adIndex]);
 
   useEffect(() => {
     const w = window as unknown as {
@@ -30,15 +26,30 @@ export default function AdCard({ adIndex }: Props) {
     const g = w.googletag;
     if (!g?.cmd) return;
 
+    let slotRef: unknown | null = null;
+
     g.cmd.push(function () {
       try {
         if (!g.defineSlot || !g.display) return;
+
+        const anyG = g as unknown as {
+          destroySlots?: (slots?: unknown[]) => boolean;
+          pubads?: () => { getSlots?: () => Array<{ getSlotElementId?: () => string }> };
+        };
+
+        const existingSlots = anyG.pubads?.()?.getSlots?.() ?? [];
+        const existing = existingSlots.find((s) => s.getSlotElementId?.() === divId);
+        if (existing && anyG.destroySlots) {
+          anyG.destroySlots([existing]);
+        }
 
         const slot = g.defineSlot(
           "/21812513503/domus.buzz/domus_bloco_01",
           [[250, 250], [300, 250], [250, 300], [336, 280]],
           divId,
         );
+
+        slotRef = slot ?? null;
 
         if (slot?.addService && g.pubads) {
           slot.addService(g.pubads());
@@ -49,6 +60,20 @@ export default function AdCard({ adIndex }: Props) {
         return;
       }
     });
+
+    return () => {
+      const g2 = (window as any).googletag;
+      if (!g2?.cmd) return;
+      g2.cmd.push(function () {
+        try {
+          if (slotRef && g2.destroySlots) {
+            g2.destroySlots([slotRef]);
+          }
+        } catch {
+          return;
+        }
+      });
+    };
   }, [divId]);
 
   return (

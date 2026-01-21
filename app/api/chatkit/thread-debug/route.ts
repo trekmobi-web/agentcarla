@@ -16,17 +16,16 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "threadId é obrigatório" }, { status: 400 });
   }
 
+  const upstreamUrl = `https://api.openai.com/v1/chatkit/threads/${encodeURIComponent(threadId)}/items?limit=50&order=asc`;
+
   try {
-    const response = await fetch(
-      `https://api.openai.com/v1/chatkit/threads/${encodeURIComponent(threadId)}/items?limit=200&order=asc`,
-      {
-        headers: {
-          "OpenAI-Beta": "chatkit_beta=v1",
-          Accept: "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+    const response = await fetch(upstreamUrl, {
+      headers: {
+        "OpenAI-Beta": "chatkit_beta=v1",
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
       },
-    );
+    });
 
     const raw = await response.text();
     let json: any = null;
@@ -39,7 +38,7 @@ export async function GET(req: Request) {
     if (!response.ok) {
       return NextResponse.json(
         {
-          error: "Erro ao listar itens da thread",
+          error: "Erro ao consultar thread",
           status: response.status,
           details: json ?? raw,
         },
@@ -47,9 +46,26 @@ export async function GET(req: Request) {
       );
     }
 
-    const userCount = (json?.data || []).filter((it: any) => it.type === "user_message").length;
+    const items: any[] = Array.isArray(json?.data) ? json.data : [];
 
-    return NextResponse.json({ userCount });
+    const compactItems = items.map((it) => {
+      const type = it?.type;
+      let text = "";
+      const content = it?.content;
+      if (Array.isArray(content)) {
+        const first = content.find((c: any) => c?.text);
+        if (first?.text) text = String(first.text);
+      }
+      return { id: it?.id, type, text };
+    });
+
+    const summary = compactItems.slice(0, 10);
+
+    return NextResponse.json({
+      count: compactItems.length,
+      summary,
+      items: compactItems,
+    });
   } catch (e) {
     return NextResponse.json(
       { error: "Falha na requisição", details: String(e) },
